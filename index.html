@@ -295,7 +295,6 @@ body{font-family:'Barlow Condensed',sans-serif;background:var(--panel-bg);
         <button class="btn btn-v btn-sm" onclick="openTrade()">🤝 Trade</button>
         <button class="btn btn-o btn-sm" id="build-btn" onclick="openBuild()" disabled>🏗 Build</button>
       </div>
-      <!-- Jail action buttons, shown only when in jail on your turn -->
       <div id="jail-actions" style="display:none;margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
     <div class="pcard">
@@ -400,13 +399,14 @@ const CHANCE_CARDS = [
   {t:'Get Out of Jail Free.',a:async(p)=>{p.jailCard=true;log(`${p.name} gets Jail Free card`,'good');}},
   {t:'Go Back Three Spaces.',a:async(p,G)=>{const np=(p.pos-3+40)%40;await teleportTo(p,np,G,true);}},
   {t:'Go to Jail!',a:async(p)=>{toJail(p);log(`${p.name} goes to jail!`,'bad');}},
-  {t:'Make repairs: $25/house, $100/hotel.',a:async(p,G)=>{let c=0;G.props.forEach(pr=>{if(pr.owner===p.id){c+=pr.houses*25+(pr.hotel?100:0);}});p.money-=c;log(`${p.name} pays $${c} repairs`,'bad');}},
+  {t:'Make repairs: $25/house, $100/hotel.',a:async(p,G)=>{let c=0;getProps().forEach(pr=>{if(pr.owner===p.id){c+=pr.houses*25+(pr.hotel?100:0);}});p.money-=c;log(`${p.name} pays $${c} repairs`,'bad');}},
   {t:'Pay poor tax of $15.',a:async(p)=>{p.money-=15;log(`${p.name} pays $15 tax`,'bad');}},
   {t:'Trip to Reading Railroad.',a:async(p,G)=>{log(`${p.name} → Reading RR`);await teleportTo(p,5,G);}},
   {t:'Take a walk to Boardwalk.',a:async(p,G)=>{log(`${p.name} → Boardwalk`);await teleportTo(p,39,G);}},
-  {t:'Chairman: Pay $50 to each player.',a:async(p,G)=>{G.players.filter(x=>!x.bankrupt&&x.id!==p.id).forEach(x=>{x.money+=50;p.money-=50;});log(`${p.name} pays $50 each`,'bad');}},
+  {t:'Chairman: Pay $50 to each player.',a:async(p,G)=>{getPlayers().filter(x=>!x.bankrupt&&x.id!==p.id).forEach(x=>{x.money+=50;p.money-=50;});log(`${p.name} pays $50 each`,'bad');}},
   {t:'Building loan matures. Collect $150.',a:async(p)=>{p.money+=150;log(`${p.name} +$150 loan`,'good');}},
 ];
+
 const COMMUNITY = [
   {t:'Advance to GO. Collect $200.',a:async(p,G)=>{log(`${p.name} → GO`,'good');await teleportTo(p,0,G,false);}},
   {t:'Bank error in your favor. Collect $200.',a:async(p)=>{p.money+=200;log(`${p.name} +$200 bank error`,'good');}},
@@ -414,10 +414,10 @@ const COMMUNITY = [
   {t:'Stock sale: Collect $50.',a:async(p)=>{p.money+=50;log(`${p.name} +$50 stocks`,'good');}},
   {t:'Get Out of Jail Free.',a:async(p)=>{p.jailCard=true;log(`${p.name} gets Jail Free card`,'good');}},
   {t:'Go to Jail.',a:async(p)=>{toJail(p);log(`${p.name} goes to jail!`,'bad');}},
-  {t:'Grand Opera Night: Collect $50 from each player.',a:async(p,G)=>{G.players.forEach(x=>{if(!x.bankrupt&&x.id!==p.id){x.money-=50;p.money+=50;}});log(`${p.name} collects $50 each`,'good');}},
+  {t:'Grand Opera Night: Collect $50 from each player.',a:async(p,G)=>{getPlayers().forEach(x=>{if(!x.bankrupt&&x.id!==p.id){x.money-=50;p.money+=50;}});log(`${p.name} collects $50 each`,'good');}},
   {t:'Holiday Fund matures. Receive $100.',a:async(p)=>{p.money+=100;log(`${p.name} +$100 holiday fund`,'good');}},
   {t:'Income tax refund. Collect $20.',a:async(p)=>{p.money+=20;log(`${p.name} +$20 refund`,'good');}},
-  {t:'Birthday! Collect $10 from each player.',a:async(p,G)=>{G.players.forEach(x=>{if(!x.bankrupt&&x.id!==p.id){x.money-=10;p.money+=10;}});log(`${p.name} birthday! +$10 each`,'good');}},
+  {t:'Birthday! Collect $10 from each player.',a:async(p,G)=>{getPlayers().forEach(x=>{if(!x.bankrupt&&x.id!==p.id){x.money-=10;p.money+=10;}});log(`${p.name} birthday! +$10 each`,'good');}},
   {t:'Life insurance matures. Collect $100.',a:async(p)=>{p.money+=100;log(`${p.name} +$100 insurance`,'good');}},
   {t:'Pay hospital fees: $100.',a:async(p)=>{p.money-=100;log(`${p.name} pays $100 hospital`,'bad');}},
   {t:'Pay school fees: $50.',a:async(p)=>{p.money-=50;log(`${p.name} pays $50 school`,'bad');}},
@@ -437,16 +437,32 @@ let maxPlayers = 3;
 let myTokenIdx = 0;
 let G = null;
 let localMoving = false;
-// Flag to prevent processing remote state updates while we are mid-action
 let processingAction = false;
-// Track the last snapshot positions for animation
 let lastPositions = {};
 
 // ══════════════════════════════════════════════════════════
-//  DICE HELPERS — use crypto randomness for fairness
+//  FIREBASE HELPER FUNCTIONS - FIX FOR ARRAY STORAGE
 // ══════════════════════════════════════════════════════════
-function rollDie() {
-  // Use cryptographically random values for better distribution
+function getPlayer(id){
+  if(!G || !G.players) return null;
+  const arr = Array.isArray(G.players) ? G.players : Object.values(G.players);
+  return arr.find(p => p && p.id === id) || null;
+}
+
+function getPlayers(){
+  if(!G || !G.players) return [];
+  return Array.isArray(G.players) ? G.players : Object.values(G.players);
+}
+
+function getProps(){
+  if(!G || !G.props) return [];
+  return Array.isArray(G.props) ? G.props : Object.values(G.props);
+}
+
+// ══════════════════════════════════════════════════════════
+//  DICE HELPERS
+// ══════════════════════════════════════════════════════════
+function rollDie(){
   const arr = new Uint8Array(1);
   crypto.getRandomValues(arr);
   return (arr[0] % 6) + 1;
@@ -455,15 +471,15 @@ function rollDie() {
 // ══════════════════════════════════════════════════════════
 //  FIREBASE INIT
 // ══════════════════════════════════════════════════════════
-function initFirebase() {
-  if (fb) return true;
+function initFirebase(){
+  if(fb) return true;
   try {
     let app;
-    if (firebase.apps.length > 0) app = firebase.apps[0];
+    if(firebase.apps.length > 0) app = firebase.apps[0];
     else app = firebase.initializeApp(FIREBASE_CONFIG);
     fb = firebase.database(app);
     return true;
-  } catch(e) {
+  } catch(e){
     toast('Firebase error: ' + e.message, 'bad');
     return false;
   }
@@ -488,7 +504,10 @@ function rndCode(){ return Math.random().toString(36).substr(2,4).toUpperCase();
 async function createRoom(){
   if(!initFirebase()) return;
   const name = (document.getElementById('my-name').value||'Player').trim();
-  roomCode = rndCode(); isHost = true; myId = 0;
+  roomCode = rndCode(); 
+  isHost = true; 
+  myId = 0;
+  
   const initState = {
     status:'lobby', maxPlayers, hostId:0,
     players:[{id:0,name,token:myTokenIdx,color:TCOLORS[myTokenIdx],
@@ -496,18 +515,24 @@ async function createRoom(){
     props:[],
     current:0, rolled:false, diceVals:[1,1], doubles:0,
     chanceIdx:0, communityIdx:0, freeParking:0,
-    pendingBuy:null, // {sqIdx, playerId} — waiting for buy decision
+    pendingBuy:null,
   };
+  
   SQUARES.forEach((sq,idx)=>{
     if(['property','railroad','utility'].includes(sq.type))
       initState.props.push({sqIdx:idx,owner:null,mortgaged:false,houses:0,hotel:false});
   });
+  
   dbRef = fb.ref('rooms/'+roomCode);
-  await dbRef.set(initState);
-  document.getElementById('room-code-show').textContent = roomCode;
-  document.getElementById('pre-room').style.display = 'none';
-  document.getElementById('in-room').style.display = '';
-  listenRoom();
+  try {
+    await dbRef.set(initState);
+    document.getElementById('room-code-show').textContent = roomCode;
+    document.getElementById('pre-room').style.display = 'none';
+    document.getElementById('in-room').style.display = '';
+    listenRoom();
+  } catch(e){
+    toast('Error creating room: ' + e.message, 'bad');
+  }
 }
 
 async function joinRoom(){
@@ -515,56 +540,86 @@ async function joinRoom(){
   const code = (document.getElementById('room-code-in').value||'').toUpperCase().trim();
   if(code.length!==4){ toast('Enter a 4-letter room code','bad'); return; }
   const name = (document.getElementById('my-name').value||'Player').trim();
+  
   dbRef = fb.ref('rooms/'+code);
-  const snap = await dbRef.once('value');
-  if(!snap.exists()){ toast('Room not found!','bad'); return; }
-  const data = snap.val();
-  if(data.status!=='lobby'){ toast('Game already started!','bad'); return; }
-  if((data.players||[]).length>=data.maxPlayers){ toast('Room is full!','bad'); return; }
-  const usedToks = (data.players||[]).map(p=>p.token);
-  let tok = myTokenIdx;
-  while(usedToks.includes(tok)) tok=(tok+1)%TOKENS.length;
-  myTokenIdx = tok; myId = (data.players||[]).length; isHost = false; roomCode = code;
-  const newPlayer = {id:myId,name,token:myTokenIdx,color:TCOLORS[myTokenIdx],
-    money:1500,pos:0,inJail:false,jailTurns:0,jailCard:false,bankrupt:false,online:true};
-  await dbRef.child('players/'+myId).set(newPlayer);
-  document.getElementById('room-code-show').textContent = roomCode;
-  document.getElementById('pre-room').style.display = 'none';
-  document.getElementById('in-room').style.display = '';
-  listenRoom();
+  try {
+    const snap = await dbRef.once('value');
+    if(!snap.exists()){ toast('Room not found!','bad'); return; }
+    
+    const data = snap.val();
+    if(data.status!=='lobby'){ toast('Game already started!','bad'); return; }
+    
+    const players = Array.isArray(data.players) ? data.players : Object.values(data.players || {});
+    if(players.length >= data.maxPlayers){ toast('Room is full!','bad'); return; }
+    
+    const usedToks = players.map(p=>p.token);
+    let tok = myTokenIdx;
+    while(usedToks.includes(tok)) tok=(tok+1)%TOKENS.length;
+    
+    myTokenIdx = tok; 
+    myId = players.length; 
+    isHost = false; 
+    roomCode = code;
+    
+    const newPlayer = {id:myId,name,token:myTokenIdx,color:TCOLORS[myTokenIdx],
+      money:1500,pos:0,inJail:false,jailTurns:0,jailCard:false,bankrupt:false,online:true};
+    
+    await dbRef.child('players/'+myId).set(newPlayer);
+    document.getElementById('room-code-show').textContent = roomCode;
+    document.getElementById('pre-room').style.display = 'none';
+    document.getElementById('in-room').style.display = '';
+    listenRoom();
+  } catch(e){
+    toast('Error joining room: ' + e.message, 'bad');
+  }
 }
 
 function listenRoom(){
   dbRef.on('value', snap=>{
-    if(!snap.exists()) return;
-    const data = snap.val();
-    if(data.status==='playing' && document.getElementById('lobby').style.display!=='none'){
-      G = data; startGameUI(); return;
-    }
-    if(data.status==='lobby'){
-      const players = data.players||[];
-      const wl = document.getElementById('waiting-list');
-      wl.innerHTML = players.map(p=>`
-        <div class="waiting-player">
-          <div class="wp-tok">${TOKENS[p.token]}</div>
-          <div class="wp-name">${p.name}</div>
-          ${p.id===myId?'<div class="wp-you">YOU</div>':''}
-        </div>`).join('');
-      document.getElementById('room-status').textContent = `${players.length}/${data.maxPlayers} players joined`;
-      if(isHost&&players.length>=2) document.getElementById('start-game-btn').style.display='';
+    try {
+      if(!snap.exists()) return;
+      const data = snap.val();
+      if(data.status==='playing' && document.getElementById('lobby').style.display!=='none'){
+        G = data; 
+        startGameUI(); 
+        return;
+      }
+      if(data.status==='lobby'){
+        const players = Array.isArray(data.players) ? data.players : Object.values(data.players || {});
+        const wl = document.getElementById('waiting-list');
+        wl.innerHTML = players.map(p=>`
+          <div class="waiting-player">
+            <div class="wp-tok">${TOKENS[p.token]}</div>
+            <div class="wp-name">${p.name}</div>
+            ${p.id===myId?'<div class="wp-you">YOU</div>':''}
+          </div>`).join('');
+        document.getElementById('room-status').textContent = `${players.length}/${data.maxPlayers} players joined`;
+        if(isHost&&players.length>=2) document.getElementById('start-game-btn').style.display='';
+      }
+    } catch(e){
+      console.error('listenRoom error:', e);
     }
   });
 }
 
 async function hostStartGame(){
   if(!isHost) return;
-  const chArr = Array.from({length:CHANCE_CARDS.length},(_,i)=>i);
-  const cmArr = Array.from({length:COMMUNITY.length},(_,i)=>i);
-  shuffle(chArr); shuffle(cmArr);
-  await dbRef.update({status:'playing', chanceOrder:chArr, communityOrder:cmArr,
-    chanceIdx:0, communityIdx:0, pendingBuy:null});
+  try {
+    const chArr = Array.from({length:CHANCE_CARDS.length},(_,i)=>i);
+    const cmArr = Array.from({length:COMMUNITY.length},(_,i)=>i);
+    shuffle(chArr); 
+    shuffle(cmArr);
+    await dbRef.update({status:'playing', chanceOrder:chArr, communityOrder:cmArr,
+      chanceIdx:0, communityIdx:0, pendingBuy:null});
+  } catch(e){
+    toast('Error starting game: ' + e.message, 'bad');
+  }
 }
-function leaveRoom(){ if(dbRef) dbRef.off(); location.reload(); }
+
+function leaveRoom(){ 
+  if(dbRef) dbRef.off(); 
+  location.reload(); 
+}
 
 // ══════════════════════════════════════════════════════════
 //  GAME START
@@ -578,20 +633,25 @@ function startGameUI(){
 
 function listenGameState(){
   dbRef.on('value', snap=>{
-    if(!snap.exists()) return;
-    const data = snap.val();
-    if(data.status!=='playing') return;
-    // If we're in the middle of a local action, just update G but don't re-render movement
-    const prevG = G;
-    G = data;
-    if(!processingAction){
-      renderAll();
-      updateControls();
-      // Show buy modal if pendingBuy is for us and modal isn't open
-      if(G.pendingBuy && G.pendingBuy.playerId===myId &&
-         !document.getElementById('modal-bg').classList.contains('on')){
-        showBuyModalFromPending();
+    try {
+      if(!snap.exists()) return;
+      const data = snap.val();
+      if(data.status!=='playing') return;
+      
+      const prevG = G;
+      G = data;
+      
+      if(!processingAction){
+        renderAll();
+        updateControls();
+        
+        if(G.pendingBuy && G.pendingBuy.playerId===myId &&
+           !document.getElementById('modal-bg').classList.contains('on')){
+          showBuyModalFromPending();
+        }
       }
+    } catch(e){
+      console.error('listenGameState error:', e);
     }
   });
 }
@@ -712,13 +772,17 @@ function ensureTokenEls(){
   const board = document.getElementById('board');
   layer.style.width = board.offsetWidth+'px';
   layer.style.height = board.offsetHeight+'px';
-  if(!G||!G.players) return;
-  G.players.forEach(p=>{
+  
+  const players = getPlayers();
+  players.forEach(p=>{
+    if(!p) return;
     let el = document.getElementById('tok-'+p.id);
     if(!el){
       el = document.createElement('div');
-      el.id = 'tok-'+p.id; el.className='ptoken';
-      el.style.background = p.color; el.textContent = TOKENS[p.token];
+      el.id = 'tok-'+p.id; 
+      el.className='ptoken';
+      el.style.background = p.color; 
+      el.textContent = TOKENS[p.token];
       el.style.opacity = '0';
       layer.appendChild(el);
     }
@@ -727,17 +791,27 @@ function ensureTokenEls(){
 
 function placeTokensInstant(){
   ensureTokenEls();
-  if(!G||!G.players) return;
+  const players = getPlayers();
+  if(!players.length) return;
+  
   const groups={};
-  G.players.forEach(p=>{ if(!p.bankrupt){ (groups[p.pos]=groups[p.pos]||[]).push(p); }});
-  G.players.forEach(p=>{
+  players.forEach(p=>{
+    if(!p || p.bankrupt) return;
+    if(!groups[p.pos]) groups[p.pos]=[];
+    groups[p.pos].push(p);
+  });
+  
+  players.forEach(p=>{
+    if(!p) return;
     const el = document.getElementById('tok-'+p.id);
     if(!el) return;
     if(p.bankrupt){ el.style.opacity='0'; return; }
+    
     const grp = groups[p.pos]||[p];
-    const i = grp.findIndex(x=>x.id===p.id);
+    const i = grp.findIndex(x=>x && x.id===p.id);
     const c = getCellCenter(p.pos);
     if(!c) return;
+    
     const ox = (i%2)*14-(grp.length>1?7:0);
     const oy = Math.floor(i/2)*14-(grp.length>2?7:0);
     el.style.left = (c.x-11+ox)+'px';
@@ -751,15 +825,18 @@ async function animatePlayerMove(pid, fromPos, toPos){
   localMoving = true;
   const el = document.getElementById('tok-'+pid);
   if(!el){ localMoving=false; return; }
+  
   el.classList.add('moving');
   let cur = fromPos;
   const steps = ((toPos-fromPos+40)%40)||40;
+  
   for(let s=0;s<steps;s++){
     cur = (cur+1)%40;
     const c = getCellCenter(cur);
     if(c){ el.style.left=(c.x-11)+'px'; el.style.top=(c.y-11)+'px'; }
     await delay(160);
   }
+  
   el.classList.remove('moving');
   localMoving = false;
   placeTokensInstant();
@@ -779,8 +856,11 @@ function renderAll(){
 
 function positionTokens(){
   ensureTokenEls();
-  if(!G||!G.players) return;
-  G.players.forEach(p=>{
+  const players = getPlayers();
+  if(!players.length) return;
+  
+  players.forEach(p=>{
+    if(!p) return;
     if(lastPositions[p.id]!==undefined && lastPositions[p.id]!==p.pos && !p.bankrupt && !localMoving){
       const from = lastPositions[p.id];
       lastPositions[p.id] = p.pos;
@@ -794,9 +874,12 @@ function positionTokens(){
 
 function renderPlayers(){
   const list = document.getElementById('pl-list');
-  if(!G||!G.players) return;
+  const players = getPlayers();
+  if(!players.length) return;
+  
   list.innerHTML='';
-  G.players.forEach(p=>{
+  players.forEach(p=>{
+    if(!p) return;
     const isMe = p.id===myId;
     const isCur = p.id===G.current;
     const div = document.createElement('div');
@@ -815,11 +898,14 @@ function renderPlayers(){
 
 function renderProps(){
   const area = document.getElementById('props-area');
-  if(!G||!G.props||!G.players) return;
-  const owned = G.props.filter(pr=>pr.owner===myId);
+  const props = getProps();
+  if(!props.length) return;
+  
+  const owned = props.filter(pr=>pr && pr.owner===myId);
   area.innerHTML = owned.length===0
     ? '<span style="color:rgba(255,255,255,0.3);font-size:12px">None yet</span>'
     : owned.map(pr=>{
+        if(!pr) return '';
         const sq = SQUARES[pr.sqIdx];
         return `<div class="pchip" title="${sq.name}">
           <div class="cdot" style="background:${CMAP[sq.color]||'#888'}"></div>
@@ -829,8 +915,11 @@ function renderProps(){
 }
 
 function renderHouses(){
-  if(!G||!G.props) return;
-  G.props.forEach(pr=>{
+  const props = getProps();
+  if(!props.length) return;
+  
+  props.forEach(pr=>{
+    if(!pr) return;
     const el = document.getElementById('h-'+pr.sqIdx);
     if(!el) return;
     el.textContent = (pr.houses>0||pr.hotel) ? (pr.hotel?'🏨':'🏠'.repeat(pr.houses)) : '';
@@ -840,15 +929,21 @@ function renderHouses(){
 // ══════════════════════════════════════════════════════════
 //  CONTROLS
 // ══════════════════════════════════════════════════════════
-function isMyTurn(){ return G && G.players && G.current===myId; }
+function isMyTurn(){ 
+  return G && G.current===myId; 
+}
 
 function updateControls(){
-  if(!G||!G.players) return;
-  const me = G.players[myId];
+  const players = getPlayers();
+  if(!players.length) return;
+  
+  const me = getPlayer(myId);
   if(!me) return;
+  
   const myTurn = isMyTurn() && !me.bankrupt;
   const notDiv = document.getElementById('not-your-turn');
-  const cur = G.players[G.current];
+  const cur = getPlayer(G.current);
+  
   if(!myTurn){
     notDiv.style.display='';
     document.getElementById('whose-turn-name').textContent = cur?cur.name:'…';
@@ -856,27 +951,22 @@ function updateControls(){
     notDiv.style.display='none';
   }
 
-  // Roll is allowed:
-  // - It's my turn, not rolled yet
-  // - If in jail: roll to try doubles (not considered a "normal" roll restriction)
   document.getElementById('roll-btn').disabled = !myTurn || G.rolled;
-  // End turn only allowed after rolling, and not while a pendingBuy awaits
   document.getElementById('end-btn').disabled = !myTurn || !G.rolled || !!G.pendingBuy;
 
-  // Buy button (sidebar quick-buy) — only if pendingBuy is for me
   const hasPending = G.pendingBuy && G.pendingBuy.playerId===myId;
   document.getElementById('buy-btn').disabled = !hasPending;
 
-  document.getElementById('mort-btn').disabled = !(G.props && G.props.some(p=>p.owner===myId));
+  const props = getProps();
+  document.getElementById('mort-btn').disabled = !(props.some(p=>p && p.owner===myId));
 
   const colors = ['brown','lightblue','magenta','orange','red','yellow','green','darkblue'];
-  const hasBuild = myTurn && G.props && colors.some(color=>{
-    const cp = G.props.filter(p=>SQUARES[p.sqIdx].color===color);
-    return cp.length>0 && cp.every(p=>p.owner===myId);
+  const hasBuild = myTurn && props.length && colors.some(color=>{
+    const cp = props.filter(p=>p && SQUARES[p.sqIdx].color===color);
+    return cp.length>0 && cp.every(p=>p && p.owner===myId);
   });
   document.getElementById('build-btn').disabled = !hasBuild;
 
-  // Jail action buttons
   const jailDiv = document.getElementById('jail-actions');
   if(myTurn && me.inJail){
     let html='';
@@ -911,31 +1001,36 @@ function updateControls(){
 // ══════════════════════════════════════════════════════════
 async function writeState(){
   if(!dbRef||!G) return;
-  await dbRef.set(G);
+  try {
+    await dbRef.set(G);
+  } catch(e){
+    console.error('writeState error:', e);
+    toast('Sync error: ' + e.message, 'bad');
+  }
 }
 
 // ── ROLL DICE ──
 async function rollDice(){
   if(!isMyTurn() || G.rolled) return;
-  // Don't allow rolling if there's a pending buy decision
   if(G.pendingBuy){ toast('Resolve the property purchase first!','bad'); return; }
 
   processingAction = true;
-  const p = G.players[myId];
+  const p = getPlayer(myId);
+  if(!p){ processingAction=false; return; }
+  
   const d1 = rollDie();
   const d2 = rollDie();
   const sum = d1+d2;
   const isDoubles = d1===d2;
+  
   G.diceVals = [d1,d2];
-
   await animateDice(d1,d2);
 
   if(p.inJail){
-    // ── JAIL ROLL LOGIC ──
     if(isDoubles){
-      // Escaped jail with doubles — move but do NOT get a re-roll for doubles
-      p.inJail = false; p.jailTurns = 0;
-      G.doubles = 0; // jail escape doubles don't count toward 3-doubles
+      p.inJail = false; 
+      p.jailTurns = 0;
+      G.doubles = 0;
       log(`${p.name} rolled doubles (${d1}+${d2}) — escaped jail!`,'good');
       toast('Escaped jail with doubles!','good');
       G.rolled = true;
@@ -943,8 +1038,9 @@ async function rollDice(){
     } else {
       p.jailTurns = (p.jailTurns||0)+1;
       if(p.jailTurns>=3){
-        // Must pay $50 and move on 3rd failed attempt
-        p.inJail = false; p.jailTurns = 0; p.money -= 50;
+        p.inJail = false; 
+        p.jailTurns = 0; 
+        p.money -= 50;
         log(`${p.name} paid $50 bail (3 failed attempts) and rolled ${d1}+${d2}`,'bad');
         toast('Paid $50 bail after 3 turns','bad');
         G.rolled = true;
@@ -952,27 +1048,26 @@ async function rollDice(){
       } else {
         log(`${p.name} stays in jail (attempt ${p.jailTurns}/3)`,'bad');
         G.rolled = true;
-        // Turn ends — player stays in jail, no movement
       }
     }
   } else {
-    // ── NORMAL ROLL ──
     if(isDoubles){
       G.doubles = (G.doubles||0)+1;
       if(G.doubles>=3){
-        // Third doubles in a row — go to jail immediately, no move
         log(`${p.name} rolled 3 doubles in a row — Jail!`,'bad');
         toast('3 doubles in a row — Jail!','bad');
         toJail(p);
-        G.rolled = true; G.doubles = 0;
+        G.rolled = true; 
+        G.doubles = 0;
         await writeState();
         processingAction = false;
-        renderAll(); updateControls();
+        renderAll(); 
+        updateControls();
         return;
       }
       log(`${p.name} rolled doubles (${d1}+${d2})! Rolls again after turn.`,'good');
     } else {
-      G.doubles = 0; // reset doubles streak
+      G.doubles = 0;
     }
     G.rolled = true;
     await doMove(p, sum);
@@ -980,7 +1075,8 @@ async function rollDice(){
 
   await writeState();
   processingAction = false;
-  renderAll(); updateControls();
+  renderAll(); 
+  updateControls();
 }
 
 // ── MOVE PLAYER ──
@@ -988,7 +1084,6 @@ async function doMove(p, steps){
   const old = p.pos;
   const newPos = (p.pos+steps)%40;
 
-  // Passed GO?
   if(newPos < old || (old===0 && steps>0)){
     p.money += 200;
     log(`${p.name} passed GO! +$200`,'good');
@@ -1049,23 +1144,21 @@ async function landOn(p){
 
 // ── PROPERTY LANDING ──
 async function handlePropLand(p, sq){
-  const pr = G.props.find(x=>SQUARES[x.sqIdx].name===sq.name);
+  const props = getProps();
+  const pr = props.find(x=>x && SQUARES[x.sqIdx].name===sq.name);
   if(!pr) return;
 
   if(pr.owner===null){
-    // Unowned — set a pendingBuy so the owner's client shows the buy modal
     G.pendingBuy = {sqIdx: pr.sqIdx, playerId: p.id};
     log(`${p.name} landed on unowned ${sq.name}`);
-    // If it's the local player, show modal immediately
-    if(p.id===myId){
-      // Modal will be shown after writeState via listenGameState
-    }
   } else if(pr.owner===p.id){
     log(`${p.name} owns ${sq.name}`);
   } else if(!pr.mortgaged){
-    const owner = G.players[pr.owner];
+    const owner = getPlayer(pr.owner);
+    if(!owner) return;
     const rent = calcRent(pr, sq);
-    p.money -= rent; owner.money += rent;
+    p.money -= rent; 
+    owner.money += rent;
     log(`${p.name} paid $${rent} rent to ${owner.name}`,'bad');
     toast(`Paid $${rent} rent to ${owner.name}`,'bad');
     await checkBankruptcy(p);
@@ -1074,21 +1167,27 @@ async function handlePropLand(p, sq){
   }
 }
 
-// ── BUY MODAL (triggered by pendingBuy) ──
+// ── BUY MODAL ──
 function showBuyModalFromPending(){
   if(!G.pendingBuy) return;
   const {sqIdx, playerId} = G.pendingBuy;
-  if(playerId !== myId) return; // only show to the landing player
+  if(playerId !== myId) return;
+  
   const sq = SQUARES[sqIdx];
-  const pr = G.props.find(x=>x.sqIdx===sqIdx);
+  const props = getProps();
+  const pr = props.find(x=>x && x.sqIdx===sqIdx);
   if(!pr || pr.owner!==null){
-    // Already bought/resolved — clear pending
-    clearPendingBuy(); return;
+    clearPendingBuy(); 
+    return;
   }
-  const p = G.players[myId];
+  
+  const p = getPlayer(myId);
+  if(!p) return;
+  
   const colorBar = sq.color?`<div class="color-bar-m" style="background:${CMAP[sq.color]}"></div>`:'';
   const rentRows = sq.rent?sq.rent.map((r,i)=>`<tr><td>${['Base','1 House','2 Houses','3 Houses','4 Houses','Hotel'][i]}</td><td>$${r}</td></tr>`).join(''):'';
   const rrRows = sq.type==='railroad'?`<tr><td>1 RR</td><td>$25</td></tr><tr><td>2 RR</td><td>$50</td></tr><tr><td>3 RR</td><td>$100</td></tr><tr><td>4 RR</td><td>$200</td></tr>`:'';
+  
   modal(`🏠 ${sq.name}`,`
     ${colorBar}
     <p><strong>${p.name}</strong> landed here.</p>
@@ -1096,15 +1195,17 @@ function showBuyModalFromPending(){
     <table class="rent-t">${rentRows}${rrRows}</table>
   `,[
     {l:`Buy $${sq.price}`, c:'btn-g', fn: async()=>{
-      if(G.players[myId].money < sq.price){ toast("Not enough money!",'bad'); return; }
-      G.players[myId].money -= sq.price;
+      const buyer = getPlayer(myId);
+      if(!buyer || buyer.money < sq.price){ toast("Not enough money!",'bad'); return; }
+      buyer.money -= sq.price;
       pr.owner = myId;
       G.pendingBuy = null;
-      log(`${p.name} bought ${sq.name}`,'good');
+      log(`${buyer.name} bought ${sq.name}`,'good');
       toast(`Bought ${sq.name}!`,'good');
       closeModal();
       await writeState();
-      renderAll(); updateControls();
+      renderAll(); 
+      updateControls();
     }},
     {l:'Auction', c:'btn-y', fn:()=>{
       G.pendingBuy = null;
@@ -1119,7 +1220,6 @@ function showBuyModalFromPending(){
   ]);
 }
 
-// Quick buy from sidebar button
 async function buyPropertyDirect(){
   if(!G.pendingBuy || G.pendingBuy.playerId!==myId) return;
   showBuyModalFromPending();
@@ -1133,24 +1233,33 @@ async function clearPendingBuy(){
 // ── AUCTION ──
 function startAuction(sq, pr){
   let bidderIdx = 0, hi = 0, hiBidder = null;
-  const bidders = G.players.filter(p=>!p.bankrupt);
+  const bidders = getPlayers().filter(p=>p && !p.bankrupt);
+  
   function nextBidder(){
     if(bidderIdx>=bidders.length){
       if(hiBidder!==null){
-        const w = G.players[hiBidder];
-        w.money -= hi; pr.owner = hiBidder;
-        log(`${w.name} won auction for ${sq.name} at $${hi}`,'good');
-        toast(`${w.name} wins ${sq.name}!`,'good');
+        const w = getPlayer(hiBidder);
+        if(w){
+          w.money -= hi; 
+          pr.owner = hiBidder;
+          log(`${w.name} won auction for ${sq.name} at $${hi}`,'good');
+          toast(`${w.name} wins ${sq.name}!`,'good');
+        }
       } else {
         log(`${sq.name} auction — no bids, remains with bank`);
       }
-      writeState(); renderAll(); updateControls();
+      writeState(); 
+      renderAll(); 
+      updateControls();
       return;
     }
+    
     const p = bidders[bidderIdx];
+    if(!p){ bidderIdx++; nextBidder(); return; }
+    
     const minBid = hi+1;
     modal(`Auction: ${sq.name}`,`
-      <p>High bid: <strong style="color:var(--gold)">$${hi}</strong>${hiBidder!==null?' by '+G.players[hiBidder].name:' (none)'}</p>
+      <p>High bid: <strong style="color:var(--gold)">$${hi}</strong>${hiBidder!==null?' by '+getPlayer(hiBidder).name:' (none)'}</p>
       <p>${p.name}'s turn — Balance: $${p.money} — Min bid: $${minBid}</p>
       <input type="number" id="bid-in" min="${minBid}" max="${p.money}" value="${Math.min(minBid,p.money)}"
         style="width:100%;padding:10px;margin-top:8px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;
@@ -1159,7 +1268,8 @@ function startAuction(sq, pr){
       {l:'Bid', c:'btn-g', fn:()=>{
         const amt=parseInt(document.getElementById('bid-in').value)||0;
         if(amt>=minBid && amt<=p.money){ hi=amt; hiBidder=p.id; }
-        bidderIdx++; nextBidder();
+        bidderIdx++; 
+        nextBidder();
       }},
       {l:'Pass', c:'btn-r', fn:()=>{ bidderIdx++; nextBidder(); }},
     ]);
@@ -1175,9 +1285,9 @@ async function doCard(type, p){
   const idx = isChance?(G.chanceIdx||0):(G.communityIdx||0);
   const cardIdx = order[idx%order.length];
   const card = arr[cardIdx!==undefined?cardIdx:0] || arr[0];
+  
   if(isChance) G.chanceIdx=(idx+1); else G.communityIdx=(idx+1);
 
-  // Show card to local player (host resolves for all in single-player, or show to all)
   await new Promise(res=>{
     modal(
       isChance?'Chance ❓':'Community Chest 📦',
@@ -1189,12 +1299,16 @@ async function doCard(type, p){
       }}]
     );
   });
-  renderAll(); updateControls();
+  
+  renderAll(); 
+  updateControls();
 }
 
 // ── JAIL ──
 function toJail(p){
-  p.pos = 10; p.inJail = true; p.jailTurns = 0;
+  p.pos = 10; 
+  p.inJail = true; 
+  p.jailTurns = 0;
 }
 
 async function teleportTo(p, target, G2, checkGo=true){
@@ -1204,14 +1318,14 @@ async function teleportTo(p, target, G2, checkGo=true){
   await animatePlayerMove(p.id, old, target);
   await delay(200);
   await landOn(p);
-  renderAll(); updateControls();
+  renderAll(); 
+  updateControls();
 }
 
 // ── BANKRUPTCY ──
 async function checkBankruptcy(p){
   if(p.money>=0) return;
   if(p.id===myId){
-    // Give player a chance to mortgage/sell
     await new Promise(res=>{
       modal(`💸 Bankruptcy Warning`,`
         <p style="color:var(--red)">You're in debt! Balance: <strong>$${p.money}</strong></p>
@@ -1223,7 +1337,6 @@ async function checkBankruptcy(p){
       ]);
     });
   } else {
-    // AI / other player — auto-declare
     if(p.money<0) declareBankrupt(p);
   }
 }
@@ -1231,54 +1344,69 @@ async function checkBankruptcy(p){
 function declareBankrupt(p){
   if(p.bankrupt) return;
   p.bankrupt = true;
-  G.props.forEach(pr=>{ if(pr.owner===p.id){ pr.owner=null; pr.mortgaged=false; pr.houses=0; pr.hotel=false; }});
+  const props = getProps();
+  props.forEach(pr=>{ 
+    if(pr && pr.owner===p.id){ 
+      pr.owner=null; 
+      pr.mortgaged=false; 
+      pr.houses=0; 
+      pr.hotel=false; 
+    }
+  });
   log(`${p.name} went BANKRUPT! 💀`,'bad');
   toast(`${p.name} bankrupt!`,'bad');
-  const alive = G.players.filter(x=>!x.bankrupt);
+  const alive = getPlayers().filter(x=>x && !x.bankrupt);
   if(alive.length===1) showWinner(alive[0]);
 }
 
 function showWinner(p){
+  if(!p) return;
   document.getElementById('win').classList.add('on');
   document.getElementById('win-name').textContent = `${TOKENS[p.token]} ${p.name}`;
 }
 
 // ── END TURN ──
-// Key rule: doubles gives another roll, BUT only if:
-//   1. Not in jail
-//   2. Not just escaped jail with doubles (G.doubles===0 in that case)
-//   3. Haven't already hit 3 doubles
 async function endTurn(){
   if(!isMyTurn() || !G.rolled) return;
   if(G.pendingBuy){ toast('Resolve the property purchase first!','bad'); return; }
 
-  const me = G.players[myId];
-  if(me.money<0){ await checkBankruptcy(me); if(me.bankrupt){ await writeState(); return; } }
+  const me = getPlayer(myId);
+  if(!me) return;
+  
+  if(me.money<0){ 
+    await checkBankruptcy(me); 
+    if(me.bankrupt){ 
+      await writeState(); 
+      return; 
+    } 
+  }
 
   const rolledDoubles = G.diceVals[0]===G.diceVals[1];
 
-  // Give another roll if: doubles, not in jail (after roll), and doubles < 3
-  // Note: if player was in jail and escaped with doubles, G.doubles was reset to 0
-  // which means they do NOT get a re-roll (jail escape with doubles = end of turn)
   if(rolledDoubles && !me.inJail && G.doubles > 0 && G.doubles < 3){
-    // Player gets another roll — just reset rolled flag, keep current player
     G.rolled = false;
     log(`${me.name} gets another roll for doubles!`,'good');
     await writeState();
-    renderAll(); updateControls();
+    renderAll(); 
+    updateControls();
     return;
   }
 
-  // Advance to next non-bankrupt player
-  let next = (G.current+1) % G.players.length;
-  while(G.players[next].bankrupt) next = (next+1)%G.players.length;
+  const players = getPlayers();
+  let next = (G.current+1) % players.length;
+  while(players[next] && players[next].bankrupt) next = (next+1) % players.length;
+  
   G.current = next;
   G.rolled = false;
   G.doubles = 0;
   G.pendingBuy = null;
-  log(`--- ${G.players[next].name}'s turn ---`,'imp');
+  
+  const nextPlayer = getPlayer(next);
+  if(nextPlayer) log(`--- ${nextPlayer.name}'s turn ---`,'imp');
+  
   await writeState();
-  renderAll(); updateControls();
+  renderAll(); 
+  updateControls();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1286,26 +1414,33 @@ async function endTurn(){
 // ══════════════════════════════════════════════════════════
 function calcRent(pr, sq){
   if(sq.type==='utility'){
-    const n = G.props.filter(p=>SQUARES[p.sqIdx].type==='utility'&&p.owner===pr.owner).length;
+    const props = getProps();
+    const n = props.filter(p=>p && SQUARES[p.sqIdx].type==='utility'&&p.owner===pr.owner).length;
     return (G.diceVals[0]+G.diceVals[1]) * (n===2?10:4);
   }
   if(sq.type==='railroad'){
-    const n = G.props.filter(p=>SQUARES[p.sqIdx].type==='railroad'&&p.owner===pr.owner).length;
+    const props = getProps();
+    const n = props.filter(p=>p && SQUARES[p.sqIdx].type==='railroad'&&p.owner===pr.owner).length;
     return [25,50,100,200][n-1]||25;
   }
   if(pr.hotel) return sq.rent[5];
   if(pr.houses>0) return sq.rent[pr.houses];
-  // Monopoly (full color set, no buildings) = double base rent
-  const grp = G.props.filter(p=>SQUARES[p.sqIdx].color===sq.color);
-  const monopoly = grp.length>0 && grp.every(p=>p.owner===pr.owner);
+  
+  const props = getProps();
+  const grp = props.filter(p=>p && SQUARES[p.sqIdx].color===sq.color);
+  const monopoly = grp.length>0 && grp.every(p=>p && p.owner===pr.owner);
   return monopoly ? sq.rent[0]*2 : sq.rent[0];
 }
 
 function openMortgage(){
-  const p = G.players[myId];
-  const owned = G.props.filter(pr=>pr.owner===myId);
+  const p = getPlayer(myId);
+  const props = getProps();
+  const owned = props.filter(pr=>pr && pr.owner===myId);
+  
   if(!owned.length){ toast('No properties!','bad'); return; }
+  
   const rows = owned.map(pr=>{
+    if(!pr) return '';
     const sq = SQUARES[pr.sqIdx];
     const hasBuildings = pr.houses>0||pr.hotel;
     return `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
@@ -1316,37 +1451,59 @@ function openMortgage(){
       </button>
     </div>`;
   }).join('');
+  
   modal('📋 Mortgage / Unmortgage', rows, [{l:'Close',c:'btn-p',fn:closeModal}]);
 }
 
 async function toggleMort(sqIdx){
-  const p = G.players[myId];
-  const pr = G.props.find(x=>x.sqIdx===sqIdx);
+  const p = getPlayer(myId);
+  if(!p) return;
+  
+  const props = getProps();
+  const pr = props.find(x=>x && x.sqIdx===sqIdx);
   const sq = SQUARES[sqIdx];
+  
   if(!pr||pr.owner!==myId) return;
+  
   if(pr.mortgaged){
-    const cost = Math.floor(sq.mg*1.1); // 10% interest on unmortgage
-    if(p.money>=cost){ p.money-=cost; pr.mortgaged=false; log(`${p.name} unmortgaged ${sq.name} for $${cost}`,'good'); }
-    else{ toast('Not enough money!','bad'); return; }
+    const cost = Math.floor(sq.mg*1.1);
+    if(p.money>=cost){ 
+      p.money-=cost; 
+      pr.mortgaged=false; 
+      log(`${p.name} unmortgaged ${sq.name} for $${cost}`,'good'); 
+    }
+    else{ 
+      toast('Not enough money!','bad'); 
+      return; 
+    }
   } else {
-    if(pr.houses>0||pr.hotel){ toast('Sell buildings first!','bad'); return; }
-    p.money += sq.mg; pr.mortgaged=true;
+    if(pr.houses>0||pr.hotel){ 
+      toast('Sell buildings first!','bad'); 
+      return; 
+    }
+    p.money += sq.mg; 
+    pr.mortgaged=true;
     log(`${p.name} mortgaged ${sq.name} for $${sq.mg}`);
   }
-  closeModal(); await writeState(); openMortgage();
+  closeModal(); 
+  await writeState(); 
+  openMortgage();
 }
 
 function openBuild(){
   const colors = ['brown','lightblue','magenta','orange','red','yellow','green','darkblue'];
   let rows='';
+  const props = getProps();
+  
   colors.forEach(color=>{
-    const cp = G.props.filter(pr=>SQUARES[pr.sqIdx].color===color);
-    if(!cp.length||!cp.every(pr=>pr.owner===myId)) return;
-    if(cp.some(pr=>pr.mortgaged)){
+    const cp = props.filter(pr=>pr && SQUARES[pr.sqIdx].color===color);
+    if(!cp.length||!cp.every(pr=>pr && pr.owner===myId)) return;
+    if(cp.some(pr=>pr && pr.mortgaged)){
       rows+=`<p style="color:var(--red);font-size:12px;text-transform:capitalize">Unmortgage all ${color} before building.</p>`;
       return;
     }
     cp.forEach(pr=>{
+      if(!pr) return;
       const sq = SQUARES[pr.sqIdx];
       rows+=`<div style="display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
         <div style="width:10px;height:10px;border-radius:50%;background:${CMAP[color]};flex-shrink:0"></div>
@@ -1356,51 +1513,85 @@ function openBuild(){
       </div>`;
     });
   });
+  
   if(!rows) rows='<p style="color:rgba(255,255,255,0.5)">You need a full color set to build.</p>';
   modal('🏗 Build / Sell Houses', rows, [{l:'Close',c:'btn-p',fn:closeModal}]);
 }
 
 async function doBuild(sqIdx){
-  const p = G.players[myId];
-  const pr = G.props.find(x=>x.sqIdx===sqIdx);
+  const p = getPlayer(myId);
+  const props = getProps();
+  const pr = props.find(x=>x && x.sqIdx===sqIdx);
   const sq = SQUARES[sqIdx];
-  if(!pr||pr.owner!==myId) return;
+  
+  if(!pr||!p||pr.owner!==myId) return;
   if(pr.hotel){ toast('Already has a hotel!','bad'); return; }
   if(p.money<sq.hc){ toast('Not enough money!','bad'); return; }
-  // Enforce even building
-  const grp = G.props.filter(x=>SQUARES[x.sqIdx].color===sq.color);
+  
+  const grp = props.filter(x=>x && SQUARES[x.sqIdx].color===sq.color);
   const thisCount = pr.houses+(pr.hotel?5:0);
-  const minCount = Math.min(...grp.map(x=>x.houses+(x.hotel?5:0)));
+  const minCount = Math.min(...grp.map(x=>x?x.houses+(x.hotel?5:0):0));
+  
   if(thisCount>minCount){ toast('Build evenly — add to the least-developed property first.','bad'); return; }
+  
   p.money -= sq.hc;
-  if(pr.houses===4){ pr.houses=0; pr.hotel=true; log(`${p.name} built 🏨 hotel on ${sq.name}`,'good'); }
-  else { pr.houses++; log(`${p.name} built 🏠 on ${sq.name}`,'good'); }
-  closeModal(); await writeState(); openBuild();
+  if(pr.houses===4){ 
+    pr.houses=0; 
+    pr.hotel=true; 
+    log(`${p.name} built 🏨 hotel on ${sq.name}`,'good'); 
+  } else { 
+    pr.houses++; 
+    log(`${p.name} built 🏠 on ${sq.name}`,'good'); 
+  }
+  
+  closeModal(); 
+  await writeState(); 
+  openBuild();
 }
 
 async function doSell(sqIdx){
-  const p = G.players[myId];
-  const pr = G.props.find(x=>x.sqIdx===sqIdx);
+  const p = getPlayer(myId);
+  const props = getProps();
+  const pr = props.find(x=>x && x.sqIdx===sqIdx);
   const sq = SQUARES[sqIdx];
-  if(!pr||pr.owner!==myId) return;
-  // Enforce even selling
-  const grp = G.props.filter(x=>SQUARES[x.sqIdx].color===sq.color);
+  
+  if(!pr||!p||pr.owner!==myId) return;
+  
+  const grp = props.filter(x=>x && SQUARES[x.sqIdx].color===sq.color);
   const thisCount = pr.houses+(pr.hotel?5:0);
-  const maxCount = Math.max(...grp.map(x=>x.houses+(x.hotel?5:0)));
+  const maxCount = Math.max(...grp.map(x=>x?x.houses+(x.hotel?5:0):0));
+  
   if(thisCount<maxCount){ toast('Sell evenly — sell from the most-developed property first.','bad'); return; }
-  if(pr.hotel){ pr.hotel=false; pr.houses=4; p.money+=Math.floor(sq.hc/2); log(`${p.name} sold hotel on ${sq.name}`); }
-  else if(pr.houses>0){ pr.houses--; p.money+=Math.floor(sq.hc/2); log(`${p.name} sold house on ${sq.name}`); }
-  else { toast('No buildings to sell!','bad'); return; }
-  closeModal(); await writeState(); openBuild();
+  
+  if(pr.hotel){ 
+    pr.hotel=false; 
+    pr.houses=4; 
+    p.money+=Math.floor(sq.hc/2); 
+    log(`${p.name} sold hotel on ${sq.name}`); 
+  } else if(pr.houses>0){ 
+    pr.houses--; 
+    p.money+=Math.floor(sq.hc/2); 
+    log(`${p.name} sold house on ${sq.name}`); 
+  } else { 
+    toast('No buildings to sell!','bad'); 
+    return; 
+  }
+  
+  closeModal(); 
+  await writeState(); 
+  openBuild();
 }
 
 function openTrade(){
-  const others = G.players.filter(p=>!p.bankrupt&&p.id!==myId);
+  const others = getPlayers().filter(p=>p && !p.bankrupt&&p.id!==myId);
   if(!others.length){ toast('No one to trade with','bad'); return; }
-  const me = G.players[myId];
-  const myProps = G.props.filter(pr=>pr.owner===myId);
+  
+  const me = getPlayer(myId);
+  const props = getProps();
+  const myProps = props.filter(pr=>pr && pr.owner===myId);
   const tid0 = others[0].id;
-  const theirProps = G.props.filter(pr=>pr.owner===tid0);
+  const theirProps = props.filter(pr=>pr && pr.owner===tid0);
+  
   modal('🤝 Trade',`
     <div class="trow"><label>With</label>
       <select class="trade-sel" id="t-target" onchange="updateTradeProps()">
@@ -1410,16 +1601,16 @@ function openTrade(){
     <div class="tcols">
       <div class="tcol">
         <div class="tcol-hd" style="color:var(--green)">You Offer</div>
-        <div class="trow"><label>Cash</label><input type="number" id="t-oc" min="0" max="${me.money}" value="0"></div>
+        <div class="trow"><label>Cash</label><input type="number" id="t-oc" min="0" max="${me?me.money:0}" value="0"></div>
         <div class="tcl" id="t-op">
-          ${myProps.map(pr=>`<label class="tcheck"><input type="checkbox" data-side="o" data-si="${pr.sqIdx}"><span>${SQUARES[pr.sqIdx].name}</span></label>`).join('')||'<span style="color:rgba(255,255,255,0.3)">None</span>'}
+          ${myProps.map(pr=>pr?`<label class="tcheck"><input type="checkbox" data-side="o" data-si="${pr.sqIdx}"><span>${SQUARES[pr.sqIdx].name}</span></label>`:'').join('')||'<span style="color:rgba(255,255,255,0.3)">None</span>'}
         </div>
       </div>
       <div class="tcol">
         <div class="tcol-hd" style="color:var(--accent)">They Offer</div>
         <div class="trow"><label>Cash</label><input type="number" id="t-rc" min="0" value="0"></div>
         <div class="tcl" id="t-rp">
-          ${theirProps.map(pr=>`<label class="tcheck"><input type="checkbox" data-side="r" data-si="${pr.sqIdx}"><span>${SQUARES[pr.sqIdx].name}</span></label>`).join('')||'<span style="color:rgba(255,255,255,0.3)">None</span>'}
+          ${theirProps.map(pr=>pr?`<label class="tcheck"><input type="checkbox" data-side="r" data-si="${pr.sqIdx}"><span>${SQUARES[pr.sqIdx].name}</span></label>`:'').join('')||'<span style="color:rgba(255,255,255,0.3)">None</span>'}
         </div>
       </div>
     </div>
@@ -1430,16 +1621,33 @@ function openTrade(){
       const rc = parseInt(document.getElementById('t-rc').value)||0;
       const op = [...document.querySelectorAll('[data-side="o"]:checked')].map(x=>parseInt(x.dataset.si));
       const rp = [...document.querySelectorAll('[data-side="r"]:checked')].map(x=>parseInt(x.dataset.si));
-      const target = G.players[tid];
-      if(oc>me.money){ toast("You don't have $"+oc,'bad'); return; }
+      
+      const target = getPlayer(tid);
+      const trader = getPlayer(myId);
+      if(!target||!trader) return;
+      
+      if(oc>trader.money){ toast("You don't have $"+oc,'bad'); return; }
       if(rc>target.money){ toast(`${target.name} doesn't have $${rc}`,'bad'); return; }
-      me.money -= oc; target.money += oc;
-      me.money += rc; target.money -= rc;
-      op.forEach(si=>{ const pr=G.props.find(x=>x.sqIdx===si); if(pr){ pr.owner=tid; pr.houses=0; pr.hotel=false; }});
-      rp.forEach(si=>{ const pr=G.props.find(x=>x.sqIdx===si); if(pr){ pr.owner=myId; pr.houses=0; pr.hotel=false; }});
-      log(`Trade: ${me.name} ↔ ${target.name}`,'imp');
+      
+      trader.money -= oc; 
+      target.money += oc;
+      trader.money += rc; 
+      target.money -= rc;
+      
+      const propsArr = getProps();
+      op.forEach(si=>{ 
+        const pr=propsArr.find(x=>x && x.sqIdx===si); 
+        if(pr){ pr.owner=tid; pr.houses=0; pr.hotel=false; }
+      });
+      rp.forEach(si=>{ 
+        const pr=propsArr.find(x=>x && x.sqIdx===si); 
+        if(pr){ pr.owner=myId; pr.houses=0; pr.hotel=false; }
+      });
+      
+      log(`Trade: ${trader.name} ↔ ${target.name}`,'imp');
       toast('Trade complete!','good');
-      closeModal(); await writeState();
+      closeModal(); 
+      await writeState();
     }},
     {l:'Cancel', c:'btn-r', fn:closeModal},
   ]);
@@ -1447,39 +1655,51 @@ function openTrade(){
 
 window.updateTradeProps = function(){
   const tid = parseInt(document.getElementById('t-target').value);
+  const props = getProps();
   const rp = document.getElementById('t-rp');
-  if(rp) rp.innerHTML = G.props.filter(pr=>pr.owner===tid)
-    .map(pr=>`<label class="tcheck"><input type="checkbox" data-side="r" data-si="${pr.sqIdx}"><span>${SQUARES[pr.sqIdx].name}</span></label>`)
+  if(rp) rp.innerHTML = props.filter(pr=>pr && pr.owner===tid)
+    .map(pr=>pr?`<label class="tcheck"><input type="checkbox" data-side="r" data-si="${pr.sqIdx}"><span>${SQUARES[pr.sqIdx].name}</span></label>`:'')
     .join('') || '<span style="color:rgba(255,255,255,0.3)">None</span>';
 };
 
 async function payJail(){
-  const p = G.players[myId];
-  if(!p.inJail) return;
+  const p = getPlayer(myId);
+  if(!p||!p.inJail) return;
   if(p.money<50){ toast('Not enough money!','bad'); return; }
-  p.money -= 50; p.inJail = false; p.jailTurns = 0;
+  
+  p.money -= 50; 
+  p.inJail = false; 
+  p.jailTurns = 0;
   log(`${p.name} paid $50 bail`,'bad');
   toast('Paid $50 bail — now roll!','good');
   await writeState();
-  renderAll(); updateControls();
+  renderAll(); 
+  updateControls();
 }
 
 async function useJailCard(){
-  const p = G.players[myId];
-  if(!p.inJail||!p.jailCard) return;
-  p.jailCard = false; p.inJail = false; p.jailTurns = 0;
+  const p = getPlayer(myId);
+  if(!p||!p.inJail||!p.jailCard) return;
+  
+  p.jailCard = false; 
+  p.inJail = false; 
+  p.jailTurns = 0;
   log(`${p.name} used Get Out of Jail Free card`,'good');
   toast('Used Jail Free card — now roll!','good');
   await writeState();
-  renderAll(); updateControls();
+  renderAll(); 
+  updateControls();
 }
 
 function showSqInfo(idx){
   const sq = SQUARES[idx];
-  const pr = G&&G.props&&G.props.find(x=>x.sqIdx===idx);
-  const owner = pr&&pr.owner!==null&&G.players[pr.owner];
+  const props = getProps();
+  const pr = props.find(x=>x && x.sqIdx===idx);
+  const owner = pr&&pr.owner!==null&&getPlayer(pr.owner);
+  
   const colorBar = sq.color?`<div class="color-bar-m" style="background:${CMAP[sq.color]}"></div>`:'';
   let body = `${colorBar}<p><strong style="font-size:16px">${sq.name}</strong></p>`;
+  
   if(pr){
     body += `<p>Owner: <strong style="color:var(--gold)">${owner?TOKENS[owner.token]+' '+owner.name:'Bank'}</strong></p>`;
     if(pr.mortgaged) body+=`<p style="color:var(--red)">🔴 Mortgaged</p>`;
@@ -1489,6 +1709,7 @@ function showSqInfo(idx){
     if(sq.type==='railroad') body+=`<p style="font-size:12px;margin-top:6px;color:rgba(255,255,255,0.5)">$25/$50/$100/$200 for 1/2/3/4 railroads</p>`;
     if(sq.type==='utility') body+=`<p style="font-size:12px;margin-top:6px;color:rgba(255,255,255,0.5)">4× dice (1 utility) or 10× dice (both utilities)</p>`;
   }
+  
   modal(sq.name, body, [{l:'Close',c:'btn-p',fn:closeModal}]);
 }
 
@@ -1505,7 +1726,11 @@ function modal(title, body, acts){
   bg.classList.add('on');
   acts.forEach((a,i)=>document.getElementById('ma'+i).onclick=a.fn);
 }
-function closeModal(){ document.getElementById('modal-bg').classList.remove('on'); }
+
+function closeModal(){ 
+  document.getElementById('modal-bg').classList.remove('on'); 
+}
+
 document.getElementById('modal-bg').onclick = e=>{
   if(e.target===document.getElementById('modal-bg')) closeModal();
 };
@@ -1513,14 +1738,17 @@ document.getElementById('modal-bg').onclick = e=>{
 function toast(msg, type=''){
   const c = document.getElementById('toasts');
   const t = document.createElement('div');
-  t.className = `toast ${type}`; t.textContent = msg;
-  c.appendChild(t); setTimeout(()=>t.remove(), 3100);
+  t.className = `toast ${type}`; 
+  t.textContent = msg;
+  c.appendChild(t); 
+  setTimeout(()=>t.remove(), 3100);
 }
 
 function log(msg, type=''){
   const box = document.getElementById('log');
   const e = document.createElement('div');
-  e.className = `le ${type}`; e.textContent = msg;
+  e.className = `le ${type}`; 
+  e.textContent = msg;
   box.insertBefore(e, box.firstChild);
   if(box.children.length>80) box.lastChild.remove();
 }
