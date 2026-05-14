@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MONOPOLY ONLINE</title>
+<!-- Firebase SDKs (must load before your script) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Titan+One&family=Barlow+Condensed:wght@400;600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap');
 
@@ -336,6 +339,10 @@ body {
 .tcol { flex:1; }
 .tcol-hd { font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:6px; }
 
+/* Bankruptcy resolution modal */
+.bankrupt-opts { display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height:200px; overflow-y:auto; }
+.bankrupt-opt { display:flex; gap:8px; align-items:center; padding:6px; border-bottom:1px solid rgba(255,255,255,0.06); }
+
 @media(max-width:780px){
   #game{flex-direction:column;align-items:center;}
   #side{width:100%;max-width:660px;}
@@ -438,7 +445,12 @@ body {
 
 <div id="toasts"></div>
 
-mvgz8BAknEDG3qSAC1VArCkA",
+<script>
+// ══════════════════════════════════════════════════════════
+//  FIREBASE CONFIG — replace apiKey with your actual key
+// ══════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY_HERE",
   authDomain: "monopoly-11c73.firebaseapp.com",
   databaseURL: "https://monopoly-11c73-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "monopoly-11c73",
@@ -504,24 +516,24 @@ const SQUARES = [
 ];
 
 const CHANCE_CARDS = [
-  {t:'Advance to GO. Collect $200.',a:(p,G)=>{log(`${p.name} → GO`,'good');teleportTo(p,0,G,false);}},
-  {t:'Advance to Illinois Avenue.',a:(p,G)=>{log(`${p.name} → Illinois Ave`);teleportTo(p,24,G);}},
-  {t:'Advance to St. Charles Place.',a:(p,G)=>{log(`${p.name} → St. Charles`);teleportTo(p,11,G);}},
-  {t:'Advance to nearest Railroad.',a:(p,G)=>{const r=[5,15,25,35];const n=r.find(x=>x>p.pos)||r[0];teleportTo(p,n,G);}},
-  {t:'Advance to nearest Utility.',a:(p,G)=>{const u=[12,28];const n=u.find(x=>x>p.pos)||u[0];teleportTo(p,n,G);}},
+  {t:'Advance to GO. Collect $200.',a:(p,G)=>{log(`${p.name} → GO`,'good');return teleportTo(p,0,G,false);}},
+  {t:'Advance to Illinois Avenue.',a:(p,G)=>{log(`${p.name} → Illinois Ave`);return teleportTo(p,24,G);}},
+  {t:'Advance to St. Charles Place.',a:(p,G)=>{log(`${p.name} → St. Charles`);return teleportTo(p,11,G);}},
+  {t:'Advance to nearest Railroad.',a:(p,G)=>{const r=[5,15,25,35];const n=r.find(x=>x>p.pos)||r[0];return teleportTo(p,n,G);}},
+  {t:'Advance to nearest Utility.',a:(p,G)=>{const u=[12,28];const n=u.find(x=>x>p.pos)||u[0];return teleportTo(p,n,G);}},
   {t:'Bank pays you $50 dividend.',a:(p,G)=>{p.money+=50;log(`${p.name} +$50 dividend`,'good');}},
   {t:'Get Out of Jail Free.',a:(p,G)=>{p.jailCard=true;log(`${p.name} gets Jail Free card`,'good');}},
-  {t:'Go Back Three Spaces.',a:(p,G)=>{const np=(p.pos-3+40)%40;teleportTo(p,np,G,true);}},
+  {t:'Go Back Three Spaces.',a:(p,G)=>{const np=(p.pos-3+40)%40;return teleportTo(p,np,G,true);}},
   {t:'Go to Jail!',a:(p,G)=>{toJail(p);log(`${p.name} goes to jail!`,'bad');}},
   {t:'Make repairs: $25/house, $100/hotel.',a:(p,G)=>{let c=0;G.props.forEach(pr=>{if(pr.owner===p.id){c+=pr.houses*25+(pr.hotel?100:0);}});p.money-=c;log(`${p.name} pays $${c} repairs`,'bad');}},
   {t:'Pay poor tax of $15.',a:(p,G)=>{p.money-=15;log(`${p.name} pays $15 tax`,'bad');}},
-  {t:'Trip to Reading Railroad.',a:(p,G)=>{log(`${p.name} → Reading RR`);teleportTo(p,5,G);}},
-  {t:'Take a walk to Boardwalk.',a:(p,G)=>{log(`${p.name} → Boardwalk`);teleportTo(p,39,G);}},
+  {t:'Trip to Reading Railroad.',a:(p,G)=>{log(`${p.name} → Reading RR`);return teleportTo(p,5,G);}},
+  {t:'Take a walk to Boardwalk.',a:(p,G)=>{log(`${p.name} → Boardwalk`);return teleportTo(p,39,G);}},
   {t:'Chairman: Pay $50 to each player.',a:(p,G)=>{G.players.filter(x=>!x.bankrupt&&x.id!==p.id).forEach(x=>{x.money+=50;p.money-=50;});log(`${p.name} pays $50 each`,'bad');}},
   {t:'Building loan matures. Collect $150.',a:(p,G)=>{p.money+=150;log(`${p.name} +$150 loan`,'good');}},
 ];
 const COMMUNITY = [
-  {t:'Advance to GO. Collect $200.',a:(p,G)=>{log(`${p.name} → GO`,'good');teleportTo(p,0,G,false);}},
+  {t:'Advance to GO. Collect $200.',a:(p,G)=>{log(`${p.name} → GO`,'good');return teleportTo(p,0,G,false);}},
   {t:'Bank error in your favor. Collect $200.',a:(p,G)=>{p.money+=200;log(`${p.name} +$200 bank error`,'good');}},
   {t:"Doctor's fees. Pay $50.",a:(p,G)=>{p.money-=50;log(`${p.name} pays $50 doctor`,'bad');}},
   {t:'Stock sale: Collect $50.',a:(p,G)=>{p.money+=50;log(`${p.name} +$50 stocks`,'good');}},
@@ -552,12 +564,11 @@ let G = null;
 let localMoving = false;
 
 // ══════════════════════════════════════════════════════════
-//  FIREBASE INIT (singleton, hardcoded config)
+//  FIREBASE INIT
 // ══════════════════════════════════════════════════════════
 function initFirebase() {
   if (fb) return true;
   try {
-    // Check if already initialized (e.g. page re-use)
     let app;
     if (firebase.apps.length > 0) {
       app = firebase.apps[0];
@@ -581,7 +592,10 @@ function renderTokenGrid(){
   g.innerHTML=TOKENS.map((t,i)=>`<button class="tok${i===myTokenIdx?' sel':''}" onclick="pickTok(${i})">${t}</button>`).join('');
 }
 function pickTok(i){ myTokenIdx=i; renderTokenGrid(); }
-function setMax(n){ maxPlayers=n; document.querySelectorAll('.num-btn').forEach((b,i)=>b.classList.toggle('on',i===n-2)); }
+function setMax(n){
+  maxPlayers=n;
+  document.querySelectorAll('.num-btn').forEach((b,i)=>b.classList.toggle('on',i===n-2));
+}
 
 function rndCode(){ return Math.random().toString(36).substr(2,4).toUpperCase(); }
 
@@ -678,7 +692,7 @@ function listenGameState(){
 }
 
 // ══════════════════════════════════════════════════════════
-//  BOARD
+//  BOARD BUILD
 // ══════════════════════════════════════════════════════════
 function cellGridPos(idx){
   if(idx===0)  return {col:11,row:11,dir:'corner'};
@@ -929,11 +943,11 @@ function updateControls(){
 
   const sq=SQUARES[me.pos];
   const pr=G.props&&G.props.find(p=>SQUARES[p.sqIdx].name===sq.name);
-  document.getElementById('buy-btn').disabled=!(myTurn&&pr&&pr.owner===null&&me.money>=(sq.price||0));
+  document.getElementById('buy-btn').disabled=!(myTurn&&G.rolled&&pr&&pr.owner===null&&me.money>=(sq.price||0));
   document.getElementById('mort-btn').disabled=!(G.props&&G.props.some(p=>p.owner===myId));
 
   const colors=['brown','lightblue','magenta','orange','red','yellow','green','darkblue'];
-  const hasBuild=G.props&&colors.some(color=>{
+  const hasBuild=myTurn&&G.props&&colors.some(color=>{
     const cp=G.props.filter(p=>SQUARES[p.sqIdx].color===color);
     return cp.length>0&&cp.every(p=>p.owner===myId);
   });
@@ -960,20 +974,22 @@ async function rollDice(){
   const d1=Math.ceil(Math.random()*6);
   const d2=Math.ceil(Math.random()*6);
   const sum=d1+d2;
-  const doubles=d1===d2;
+  const isDoubles=d1===d2;
   G.diceVals=[d1,d2];
   await animateDice(d1,d2);
 
   if(p.inJail){
-    if(doubles){
+    // ── FIX: jail doubles escape resets doubles counter ──
+    if(isDoubles){
       p.inJail=false; p.jailTurns=0;
+      G.doubles=0; // reset so 3-doubles logic isn't confused
       log(`${p.name} rolled doubles (${d1}+${d2}), out of jail!`,'good');
       await doMove(p,sum);
     } else {
-      p.jailTurns++;
+      p.jailTurns=(p.jailTurns||0)+1;
       if(p.jailTurns>=3){
         p.inJail=false; p.jailTurns=0; p.money-=50;
-        log(`${p.name} paid $50 bail`,'bad');
+        log(`${p.name} paid $50 bail after 3 turns`,'bad');
         await doMove(p,sum);
       } else {
         log(`${p.name} stays in jail (${3-p.jailTurns} turns left)`,'bad');
@@ -981,11 +997,17 @@ async function rollDice(){
       }
     }
   } else {
-    if(doubles){
+    if(isDoubles){
       G.doubles=(G.doubles||0)+1;
-      if(G.doubles>=3){ log(`${p.name} rolled 3 doubles - go to jail!`,'bad'); toJail(p); G.rolled=true; await writeState(); return; }
+      // ── FIX: 3 doubles sends to jail — check BEFORE moving ──
+      if(G.doubles>=3){
+        log(`${p.name} rolled 3 doubles — go to jail!`,'bad');
+        toJail(p); G.rolled=true; G.doubles=0; await writeState(); return;
+      }
       log(`${p.name} rolled doubles (${d1}+${d2})!`,'good');
-    } else { G.doubles=0; }
+    } else {
+      G.doubles=0;
+    }
     await doMove(p,sum);
   }
   G.rolled=true; await writeState();
@@ -994,7 +1016,7 @@ async function rollDice(){
 async function doMove(p, steps){
   const old=p.pos;
   p.pos=(p.pos+steps)%40;
-  if(p.pos<=old){ p.money+=200; log(`${p.name} passed GO! +$200`,'good'); toast(`${p.name} passed GO! +$200`,'good'); }
+  if(p.pos<old||(old===0&&steps>0)){ p.money+=200; log(`${p.name} passed GO! +$200`,'good'); toast(`${p.name} passed GO! +$200`,'good'); }
   log(`${p.name} rolls ${G.diceVals[0]}+${G.diceVals[1]}=${G.diceVals[0]+G.diceVals[1]} → ${SQUARES[p.pos].name}`);
   await animatePlayerMove(p.id, old, p.pos);
   await delay(200);
@@ -1004,10 +1026,11 @@ async function doMove(p, steps){
 async function landOn(p){
   const sq=SQUARES[p.pos];
   switch(sq.type){
-    case 'property': case 'railroad': case 'utility': handlePropLand(p,sq); break;
+    case 'property': case 'railroad': case 'utility': await handlePropLand(p,sq); break;
     case 'tax':
       p.money-=sq.amount; G.freeParking=(G.freeParking||0)+sq.amount;
-      log(`${p.name} paid $${sq.amount} tax`,'bad'); toast(`Paid $${sq.amount} tax`,'bad'); break;
+      log(`${p.name} paid $${sq.amount} tax`,'bad'); toast(`Paid $${sq.amount} tax`,'bad');
+      await checkBankruptcy(p); break;
     case 'chance': await doCard('chance',p); break;
     case 'community': await doCard('community',p); break;
     case 'gotojail': toJail(p); log(`${p.name} is sent to jail!`,'bad'); toast(`${p.name} goes to jail!`,'bad'); break;
@@ -1015,23 +1038,29 @@ async function landOn(p){
       if(G.freeParking>0){ p.money+=G.freeParking; log(`${p.name} collects $${G.freeParking} Free Parking!`,'good'); toast(`Free Parking! +$${G.freeParking}`,'good'); G.freeParking=0; }
       break;
     case 'jail': log(`${p.name} is just visiting`); break;
+    case 'go': log(`${p.name} is on GO`); break;
   }
-  checkBankruptcy(p);
 }
 
-function handlePropLand(p,sq){
+// ── FIX: handlePropLand is now async ──
+async function handlePropLand(p,sq){
   const pr=G.props.find(x=>SQUARES[x.sqIdx].name===sq.name);
   if(!pr) return;
-  if(pr.owner===null){ showBuyModal(p,sq,pr); }
-  else if(pr.owner===p.id){ log(`${p.name} owns ${sq.name}`); }
-  else if(!pr.mortgaged){
+  if(pr.owner===null){
+    // Only show buy modal if it's the current player's turn
+    if(p.id===myId) showBuyModal(p,sq,pr);
+  } else if(pr.owner===p.id){
+    log(`${p.name} owns ${sq.name}`);
+  } else if(!pr.mortgaged){
     const owner=G.players[pr.owner];
     const rent=calcRent(pr,sq);
     p.money-=rent; owner.money+=rent;
     log(`${p.name} paid $${rent} rent to ${owner.name}`,'bad');
     toast(`Paid $${rent} rent to ${owner.name}`,'bad');
-    checkBankruptcy(p);
-  } else { log(`${p.name} on mortgaged ${sq.name}`); }
+    await checkBankruptcy(p);
+  } else {
+    log(`${p.name} on mortgaged ${sq.name}`);
+  }
 }
 
 function calcRent(pr,sq){
@@ -1045,8 +1074,10 @@ function calcRent(pr,sq){
   }
   if(pr.hotel) return sq.rent[5];
   if(pr.houses>0) return sq.rent[pr.houses];
+  // ── FIX: double rent only when owner has full colour set and no buildings ──
   const grp=G.props.filter(p=>SQUARES[p.sqIdx].color===sq.color);
-  return grp.every(p=>p.owner===pr.owner)?sq.rent[0]*2:sq.rent[0];
+  const monopoly=grp.every(p=>p.owner===pr.owner);
+  return monopoly ? sq.rent[0]*2 : sq.rent[0];
 }
 
 function showBuyModal(p,sq,pr){
@@ -1058,9 +1089,12 @@ function showBuyModal(p,sq,pr){
     <p>Price: <strong style="color:var(--gold)">$${sq.price}</strong> · Balance: <strong style="color:var(--green)">$${p.money}</strong></p>
     <table class="rent-t">${rentRows}${rrRows}</table>
   `,[
-    {l:`Buy $${sq.price}`,c:'btn-g',fn:async()=>{ if(p.money>=sq.price){p.money-=sq.price;pr.owner=p.id;log(`${p.name} bought ${sq.name}`,'good');toast(`Bought ${sq.name}!`,'good');} closeModal(); await writeState(); }},
+    {l:`Buy $${sq.price}`,c:'btn-g',fn:async()=>{
+      if(p.money>=sq.price){ p.money-=sq.price; pr.owner=p.id; log(`${p.name} bought ${sq.name}`,'good'); toast(`Bought ${sq.name}!`,'good'); }
+      closeModal(); await writeState();
+    }},
     {l:'Auction',c:'btn-y',fn:()=>{closeModal();startAuction(sq,pr);}},
-    {l:'Pass',c:'btn-r',fn:()=>{closeModal();startAuction(sq,pr);}},
+    {l:'Pass',c:'btn-r',fn:async()=>{closeModal(); await writeState(); startAuction(sq,pr);}},
   ]);
 }
 
@@ -1077,7 +1111,7 @@ function startAuction(sq,pr){
     const minBid=hi+1;
     modal(`Auction: ${sq.name}`,`
       <p>High bid: <strong style="color:var(--gold)">$${hi}</strong> ${hiBidder!==null?'by '+G.players[hiBidder].name:''}</p>
-      <p>${p.name}'s bid (balance: $${p.money}) — min: $${minBid}</p>
+      <p>${p.name}'s turn (balance: $${p.money}) — min bid: $${minBid}</p>
       <input type="number" id="bid-in" min="${minBid}" max="${p.money}" value="${Math.min(minBid,p.money)}" style="width:100%;padding:10px;margin-top:8px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:rgba(255,255,255,0.08);color:white;font-size:18px;font-family:'Barlow Condensed'">
     `,[
       {l:'Bid',c:'btn-g',fn:()=>{ const amt=parseInt(document.getElementById('bid-in').value)||0; if(amt>=minBid&&amt<=p.money){hi=amt;hiBidder=p.id;} bidderIdx++;nextBidder(); }},
@@ -1087,6 +1121,7 @@ function startAuction(sq,pr){
   nextBidder();
 }
 
+// ── FIX: doCard returns a Promise and awaits the card action if it teleports ──
 async function doCard(type,p){
   const isChance=type==='chance';
   const arr=isChance?CHANCE_CARDS:COMMUNITY;
@@ -1096,38 +1131,75 @@ async function doCard(type,p){
   if(isChance) G.chanceIdx=(idx+1); else G.communityIdx=(idx+1);
   await new Promise(res=>{
     modal(isChance?'Chance ❓':'Community Chest 📦',`<p style="font-size:16px;font-style:italic;color:var(--gold)">"${card.t}"</p>`,[
-      {l:'OK',c:'btn-p',fn:()=>{closeModal();card.a(p,G);res();}},
+      {l:'OK',c:'btn-p',fn:async()=>{ closeModal(); const r=card.a(p,G); if(r&&r.then) await r; res(); }},
     ]);
   });
   renderAll(); updateControls();
 }
 
 function toJail(p){ p.pos=10; p.inJail=true; p.jailTurns=0; }
-function teleportTo(p,target,G2,noGo){
-  if(!noGo&&target<p.pos){p.money+=200;log(`${p.name} passed GO! +$200`,'good');}
-  p.pos=target; landOn(p); renderAll(); updateControls();
+
+// ── FIX: teleportTo is async and properly animates movement ──
+async function teleportTo(p, target, G2, checkGo=true){
+  const old=p.pos;
+  if(checkGo && target<=old && target!==old){ p.money+=200; log(`${p.name} passed GO! +$200`,'good'); }
+  p.pos=target;
+  await animatePlayerMove(p.id, old, target);
+  await delay(200);
+  await landOn(p);
+  renderAll(); updateControls();
 }
 
-function checkBankruptcy(p){
-  if(p.money<0){ const owned=G.props.filter(pr=>pr.owner===p.id&&!pr.mortgaged); if(owned.length===0&&p.money<0) declareBankrupt(p); }
+// ── FIX: bankruptcy offers the player a chance to mortgage/sell before declaring ──
+async function checkBankruptcy(p){
+  if(p.money>=0) return;
+  // Check if they have anything left to liquidate
+  const owned=G.props.filter(pr=>pr.owner===p.id);
+  const canLiquidate=owned.some(pr=>!pr.mortgaged||pr.houses>0||pr.hotel);
+  if(canLiquidate && p.id===myId){
+    // Give the local player a chance to raise funds
+    await new Promise(res=>{
+      modal(`💸 Bankruptcy Warning`,`
+        <p style="color:var(--red)">You're in debt! Balance: <strong>$${p.money}</strong></p>
+        <p>Mortgage or sell buildings to raise funds, then end your turn. If you still can't pay, you'll go bankrupt.</p>
+      `,[
+        {l:'Manage Assets',c:'btn-y',fn:()=>{ closeModal(); res(); }},
+        {l:'Declare Bankrupt',c:'btn-r',fn:()=>{ closeModal(); declareBankrupt(p); res(); }},
+      ]);
+    });
+  } else if(p.money<0){
+    declareBankrupt(p);
+  }
 }
 
 function declareBankrupt(p){
+  if(p.bankrupt) return; // guard against double-call
   p.bankrupt=true;
   G.props.forEach(pr=>{if(pr.owner===p.id){pr.owner=null;pr.mortgaged=false;pr.houses=0;pr.hotel=false;}});
-  log(`${p.name} went BANKRUPT!`,'bad'); toast(`${p.name} bankrupt!`,'bad');
+  log(`${p.name} went BANKRUPT! 💀`,'bad'); toast(`${p.name} bankrupt!`,'bad');
   const alive=G.players.filter(x=>!x.bankrupt);
   if(alive.length===1){ showWinner(alive[0]); }
 }
 
 function showWinner(p){ document.getElementById('win').classList.add('on'); document.getElementById('win-name').textContent=`${TOKENS[p.token]} ${p.name}`; }
 
+// ── FIX: endTurn doubles logic corrected ──
 async function endTurn(){
   if(!isMyTurn()||!G.rolled) return;
-  const d1=G.diceVals[0], d2=G.diceVals[1];
-  const doubles=d1===d2;
   const me=G.players[myId];
-  if(doubles&&!me.inJail&&(G.doubles||0)<3){ G.rolled=false; await writeState(); return; }
+
+  // If player is in negative balance, resolve bankruptcy first
+  if(me.money<0){ await checkBankruptcy(me); if(me.bankrupt){ await writeState(); return; } }
+
+  const isDoubles=G.diceVals[0]===G.diceVals[1];
+  // Rolled doubles and not in jail and haven't hit 3 doubles → roll again
+  if(isDoubles && !me.inJail && G.doubles>0 && G.doubles<3){
+    G.rolled=false;
+    await writeState();
+    return; // keep current player's turn
+  }
+
+  // Advance to next non-bankrupt player
   let next=(G.current+1)%G.players.length;
   while(G.players[next].bankrupt) next=(next+1)%G.players.length;
   G.current=next; G.rolled=false; G.doubles=0;
@@ -1136,12 +1208,13 @@ async function endTurn(){
 }
 
 async function buyProperty(){
-  if(!isMyTurn()) return;
+  if(!isMyTurn()||!G.rolled) return;
   const p=G.players[myId];
   const sq=SQUARES[p.pos];
   const pr=G.props.find(x=>SQUARES[x.sqIdx].name===sq.name);
   if(!pr||pr.owner!==null) return;
   if(p.money>=sq.price){ p.money-=sq.price; pr.owner=myId; log(`${p.name} bought ${sq.name}`,'good'); toast(`Bought ${sq.name}!`,'good'); await writeState(); }
+  else { toast("Not enough money!",'bad'); }
 }
 
 function openMortgage(){
@@ -1150,9 +1223,11 @@ function openMortgage(){
   if(!owned.length){toast('No properties!','bad');return;}
   const rows=owned.map(pr=>{
     const sq=SQUARES[pr.sqIdx];
+    // ── FIX: can't mortgage if buildings present ──
+    const hasBuildings=pr.houses>0||pr.hotel;
     return `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
       <div style="width:10px;height:10px;border-radius:50%;background:${CMAP[sq.color]||'#888'};flex-shrink:0"></div>
-      <span style="flex:1;font-size:13px;color:rgba(255,255,255,0.8)">${sq.name}${pr.mortgaged?' (M)':''}</span>
+      <span style="flex:1;font-size:13px;color:rgba(255,255,255,0.8)">${sq.name}${pr.mortgaged?' (M)':''}${hasBuildings?' 🏗':''}</span>
       <button class="btn btn-sm ${pr.mortgaged?'btn-g':'btn-r'}" onclick="toggleMort(${pr.sqIdx})">${pr.mortgaged?`Unmortgage $${sq.mg*2}`:`Mortgage $${sq.mg}`}</button>
     </div>`;
   }).join('');
@@ -1164,8 +1239,15 @@ async function toggleMort(sqIdx){
   const pr=G.props.find(x=>x.sqIdx===sqIdx);
   const sq=SQUARES[sqIdx];
   if(!pr||pr.owner!==myId) return;
-  if(pr.mortgaged){ const cost=sq.mg*2; if(p.money>=cost){p.money-=cost;pr.mortgaged=false;log(`${p.name} unmortgaged ${sq.name}`,'good');}else{toast('Not enough money!','bad');return;} }
-  else { if(pr.houses>0||pr.hotel){toast('Sell buildings first!','bad');return;} p.money+=sq.mg; pr.mortgaged=true; log(`${p.name} mortgaged ${sq.name} for $${sq.mg}`); }
+  if(pr.mortgaged){
+    const cost=sq.mg*2;
+    if(p.money>=cost){p.money-=cost;pr.mortgaged=false;log(`${p.name} unmortgaged ${sq.name}`,'good');}
+    else{toast('Not enough money!','bad');return;}
+  } else {
+    // ── FIX: must sell buildings before mortgaging ──
+    if(pr.houses>0||pr.hotel){toast('Sell buildings first!','bad');return;}
+    p.money+=sq.mg; pr.mortgaged=true; log(`${p.name} mortgaged ${sq.name} for $${sq.mg}`);
+  }
   closeModal(); await writeState(); openMortgage();
 }
 
@@ -1175,18 +1257,20 @@ function openBuild(){
   colors.forEach(color=>{
     const cp=G.props.filter(pr=>SQUARES[pr.sqIdx].color===color);
     if(!cp.length||!cp.every(pr=>pr.owner===myId)) return;
+    // ── FIX: can't build if any in colour group is mortgaged ──
+    if(cp.some(pr=>pr.mortgaged)){ rows+=`<p style="color:var(--red);font-size:12px">Unmortgage all ${color} before building.</p>`; return; }
     cp.forEach(pr=>{
       const sq=SQUARES[pr.sqIdx];
       rows+=`<div style="display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
         <div style="width:10px;height:10px;border-radius:50%;background:${CMAP[color]};flex-shrink:0"></div>
         <span style="flex:1;font-size:12px;color:rgba(255,255,255,0.8)">${sq.name} ${'🏠'.repeat(pr.houses)}${pr.hotel?'🏨':''}</span>
         <button class="btn btn-g btn-sm" onclick="doBuild(${pr.sqIdx})">+$${sq.hc}</button>
-        <button class="btn btn-r btn-sm" onclick="doSell(${pr.sqIdx})">Sell</button>
+        <button class="btn btn-r btn-sm" onclick="doSell(${pr.sqIdx})">Sell $${Math.floor(sq.hc/2)}</button>
       </div>`;
     });
   });
-  if(!rows) rows='<p>You need a full color set to build.</p>';
-  modal('🏗 Build',rows,[{l:'Close',c:'btn-p',fn:closeModal}]);
+  if(!rows) rows='<p style="color:rgba(255,255,255,0.5)">You need a full color set to build.</p>';
+  modal('🏗 Build / Sell',rows,[{l:'Close',c:'btn-p',fn:closeModal}]);
 }
 
 async function doBuild(sqIdx){
@@ -1196,6 +1280,11 @@ async function doBuild(sqIdx){
   if(!pr||pr.owner!==myId) return;
   if(pr.hotel){toast('Already has hotel!','bad');return;}
   if(p.money<sq.hc){toast('Not enough money!','bad');return;}
+  // ── FIX: enforce even building rule ──
+  const grp=G.props.filter(x=>SQUARES[x.sqIdx].color===sq.color);
+  const minHouses=Math.min(...grp.map(x=>x.houses+(x.hotel?5:0)));
+  const thisHouses=pr.houses+(pr.hotel?5:0);
+  if(thisHouses>minHouses){toast('Build evenly! Add to cheaper property first.','bad');return;}
   p.money-=sq.hc;
   if(pr.houses===4){pr.houses=0;pr.hotel=true;log(`${p.name} built hotel on ${sq.name}`,'good');}
   else{pr.houses++;log(`${p.name} built house on ${sq.name}`,'good');}
@@ -1207,8 +1296,14 @@ async function doSell(sqIdx){
   const pr=G.props.find(x=>x.sqIdx===sqIdx);
   const sq=SQUARES[sqIdx];
   if(!pr||pr.owner!==myId) return;
-  if(pr.hotel){pr.hotel=false;pr.houses=4;p.money+=Math.floor(sq.hc/2);}
-  else if(pr.houses>0){pr.houses--;p.money+=Math.floor(sq.hc/2);}
+  // ── FIX: enforce even selling rule ──
+  const grp=G.props.filter(x=>SQUARES[x.sqIdx].color===sq.color);
+  const maxHouses=Math.max(...grp.map(x=>x.houses+(x.hotel?5:0)));
+  const thisHouses=pr.houses+(pr.hotel?5:0);
+  if(thisHouses<maxHouses){toast('Sell evenly! Sell from most-developed property first.','bad');return;}
+  if(pr.hotel){pr.hotel=false;pr.houses=4;p.money+=Math.floor(sq.hc/2);log(`${p.name} sold hotel on ${sq.name}`);}
+  else if(pr.houses>0){pr.houses--;p.money+=Math.floor(sq.hc/2);log(`${p.name} sold house on ${sq.name}`);}
+  else{toast('No buildings to sell!','bad');return;}
   closeModal(); await writeState(); openBuild();
 }
 
@@ -1243,13 +1338,14 @@ function openTrade(){
       if(oc>me.money){toast("You don't have $"+oc,'bad');return;}
       if(rc>target.money){toast(`${target.name} doesn't have $${rc}`,'bad');return;}
       me.money-=oc; target.money+=oc; me.money+=rc; target.money-=rc;
-      op.forEach(si=>{const pr=G.props.find(x=>x.sqIdx===si);if(pr)pr.owner=tid;});
-      rp.forEach(si=>{const pr=G.props.find(x=>x.sqIdx===si);if(pr)pr.owner=myId;});
+      op.forEach(si=>{const pr=G.props.find(x=>x.sqIdx===si);if(pr){pr.owner=tid; pr.houses=0; pr.hotel=false;}});
+      rp.forEach(si=>{const pr=G.props.find(x=>x.sqIdx===si);if(pr){pr.owner=myId; pr.houses=0; pr.hotel=false;}});
       log(`Trade: ${me.name} ↔ ${target.name}`,'imp'); toast('Trade done!','good'); closeModal(); await writeState();
     }},
     {l:'Cancel',c:'btn-r',fn:closeModal},
   ]);
 }
+
 window.updateTradeProps=function(){
   const tid=parseInt(document.getElementById('t-target').value);
   const rp=document.getElementById('t-rp');
@@ -1263,11 +1359,12 @@ function payJail(){
   p.money-=50; p.inJail=false; p.jailTurns=0;
   log(`${p.name} paid $50 bail`,'bad'); writeState();
 }
+
 function useJailCard(){
   const p=G.players[myId];
   if(!p.inJail||!p.jailCard) return;
   p.jailCard=false; p.inJail=false; p.jailTurns=0;
-  log(`${p.name} used Jail Free card`,'good'); writeState();
+  log(`${p.name} used Get Out of Jail Free card`,'good'); writeState();
 }
 
 function showSqInfo(idx){
@@ -1280,9 +1377,10 @@ function showSqInfo(idx){
     body+=`<p>Owner: <strong style="color:var(--gold)">${owner?TOKENS[owner.token]+' '+owner.name:'Bank'}</strong></p>`;
     if(pr.mortgaged) body+=`<p style="color:var(--red)">🔴 Mortgaged</p>`;
     if(pr.houses) body+=`<p>${'🏠'.repeat(pr.houses)}</p>`;
-    if(pr.hotel) body+=`<p>🏨</p>`;
+    if(pr.hotel) body+=`<p>🏨 Hotel</p>`;
     if(sq.rent) body+=`<table class="rent-t">${sq.rent.map((r,i)=>`<tr><td>${['Base','1H','2H','3H','4H','Hotel'][i]}</td><td>$${r}</td></tr>`).join('')}</table>`;
     if(sq.type==='railroad') body+=`<p style="font-size:12px;margin-top:6px;color:rgba(255,255,255,0.5)">Rent: $25/$50/$100/$200 for 1/2/3/4 RRs</p>`;
+    if(sq.type==='utility') body+=`<p style="font-size:12px;margin-top:6px;color:rgba(255,255,255,0.5)">Rent: 4× dice (1 utility) or 10× dice (both owned)</p>`;
   }
   modal(sq.name,body,[{l:'Close',c:'btn-p',fn:closeModal}]);
 }
@@ -1323,14 +1421,23 @@ function shuffle(arr){ for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.r
 renderTokenGrid();
 setMax(3);
 
-window.pickTok=pickTok; window.setMax=setMax;
-window.createRoom=createRoom; window.joinRoom=joinRoom;
-window.hostStartGame=hostStartGame; window.leaveRoom=leaveRoom;
-window.rollDice=rollDice; window.endTurn=endTurn;
-window.buyProperty=buyProperty; window.openMortgage=openMortgage;
-window.toggleMort=toggleMort; window.openBuild=openBuild;
-window.doBuild=doBuild; window.doSell=doSell;
-window.openTrade=openTrade; window.payJail=payJail;
+// Expose to global scope (needed for inline onclick handlers)
+window.pickTok=pickTok;
+window.setMax=setMax;
+window.createRoom=createRoom;
+window.joinRoom=joinRoom;
+window.hostStartGame=hostStartGame;
+window.leaveRoom=leaveRoom;
+window.rollDice=rollDice;
+window.endTurn=endTurn;
+window.buyProperty=buyProperty;
+window.openMortgage=openMortgage;
+window.toggleMort=toggleMort;
+window.openBuild=openBuild;
+window.doBuild=doBuild;
+window.doSell=doSell;
+window.openTrade=openTrade;
+window.payJail=payJail;
 window.useJailCard=useJailCard;
 </script>
 </body>
