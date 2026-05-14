@@ -1149,8 +1149,16 @@ async function handlePropLand(p, sq){
   if(!pr) return;
 
   if(pr.owner===null){
-    G.pendingBuy = {sqIdx: pr.sqIdx, playerId: p.id};
+    G.pendingBuy = {
+      sqIdx: pr.sqIdx,
+      playerId: p.id
+    };
+  
     log(`${p.name} landed on unowned ${sq.name}`);
+    toast(`${sq.name} is available to buy!`, 'good');
+  
+    await writeState();
+  }
   } else if(pr.owner===p.id){
     log(`${p.name} owns ${sq.name}`);
   } else if(!pr.mortgaged){
@@ -1222,6 +1230,7 @@ function showBuyModalFromPending(){
 
 async function buyPropertyDirect(){
   if(!G.pendingBuy || G.pendingBuy.playerId!==myId) return;
+  await writeState();
   showBuyModalFromPending();
 }
 
